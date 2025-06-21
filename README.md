@@ -1,61 +1,73 @@
 # DDNS TP-Link Server
 
-Servidor Flask para atualização dinâmica de DNS usando a API da DigitalOcean.
+Flask server for dynamic DNS updates using DigitalOcean API.
 
-## Configuração
+## Configuration
 
-Antes de executar o servidor, edite as configurações no início do arquivo `ddns_server.py`:
+Before running the server, edit the settings at the beginning of the `ddns_server.py` file:
 
 ```python
 # =============================================
-# CONFIGURAÇÕES - EDITE AQUI CONFORME NECESSÁRIO
+# CONFIGURATION - EDIT HERE AS NEEDED
 # =============================================
 
-# Credenciais de autenticação
+# Authentication credentials
 DDNS_USERNAME = "ddns"
 DDNS_PASSWORD = "senhaescondida"
 
-# Configurações do servidor
+# Server configuration
 SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 8443
-DEBUG_MODE = False  # True apenas para desenvolvimento
+DEBUG_MODE = False  # True only for development
 
-# Configurações da DigitalOcean API
-TOKEN = "seu_token_aqui"
-DOMAIN = "seu_dominio.com"
-RECORD_ID = "seu_record_id"
+# DigitalOcean API configuration
+TOKEN = "your_token_here"
+DOMAIN = "your_domain.com"
+RECORD_ID = "your_record_id"
 ```
 
-## Instalação
+## Installation
 
-1. Instale as dependências:
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/ddns_tplink.git
+cd ddns_tplink
+```
+
+2. Create a virtual environment (recommended):
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Execução
+## Execution
 
-### Desenvolvimento (apenas para testes)
+### Development (testing only)
 
 ```bash
 python ddns_server.py
 ```
 
-### Produção (recomendado)
+### Production (recommended)
 
 ```bash
-# Inicia o servidor em modo de produção com Gunicorn
+# Start server in production mode with Gunicorn
 ./start_production.sh
 
-# Para parar o servidor
+# Stop server
 ./stop_server.sh
 ```
 
-O servidor será executado no host e porta configurados nas variáveis `SERVER_HOST` e `SERVER_PORT`.
+The server will run on the host and port configured in the `SERVER_HOST` and `SERVER_PORT` variables.
 
-### Execução como serviço do sistema (Linux)
+### Run as system service (Linux)
 
-1. Edite o arquivo `ddns-server.service` e ajuste os caminhos:
+1. Edit the `ddns-server.service` file and adjust the paths:
 ```bash
 sudo cp ddns-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -63,98 +75,98 @@ sudo systemctl enable ddns-server
 sudo systemctl start ddns-server
 ```
 
-2. Verificar status:
+2. Check status:
 ```bash
 sudo systemctl status ddns-server
 ```
 
-## Uso
+## Usage
 
-Faça uma requisição GET para `/ap` com os seguintes parâmetros:
+Make a GET request to `/ap` with the following parameters:
 
-- `username`: deve coincidir com `DDNS_USERNAME` configurado no servidor
-- `password`: deve coincidir com `DDNS_PASSWORD` configurado no servidor
-- `hostname`: nome do host
-- `ip`: endereço IP a ser atualizado
+- `username`: must match `DDNS_USERNAME` configured on the server
+- `password`: must match `DDNS_PASSWORD` configured on the server
+- `hostname`: host name
+- `ip`: IP address to be updated
 
-### Exemplo de uso:
+### Usage example:
 
 ```
 GET http://localhost:8443/ap?username=ddns&password=senhaescondida&hostname=example&ip=192.168.1.100
 ```
 
-**Nota**: Substitua `localhost:8443` pelo host e porta configurados nas variáveis `SERVER_HOST` e `SERVER_PORT`.
+**Note**: Replace `localhost:8443` with the host and port configured in the `SERVER_HOST` and `SERVER_PORT` variables.
 
-## Respostas possíveis:
+## Possible responses:
 
-- `IP unchanged` (200): O IP não mudou desde a última atualização
-- `DNS updated` (200): DNS foi atualizado com sucesso
-- `Unauthorized` (403): Credenciais incorretas
-- `Missing parameters` (400): Parâmetros obrigatórios não fornecidos
-- Erro 500: Falha na comunicação com a API da DigitalOcean
+- `IP unchanged` (200): IP hasn't changed since last update
+- `DNS updated` (200): DNS was successfully updated
+- `Unauthorized` (403): Incorrect credentials
+- `Missing parameters` (400): Required parameters not provided
+- Error 500: Failure communicating with DigitalOcean API
 
-## Arquivo de log
+## Log file
 
-O histórico de IPs é mantido no arquivo `ips.log` no formato:
+IP change history is maintained in the `ips.log` file in the format:
 ```
 timestamp,ip
 ```
 
-## Logs e Monitoramento
+## Logs and Monitoring
 
-### Logs disponíveis:
+### Available logs:
 
-1. **ddns_operations.log**: Log detalhado das operações do sistema
-   - Requisições recebidas
-   - Verificações de mudança de IP
-   - Atualizações de DNS
-   - Erros de autenticação
+1. **ddns_operations.log**: Detailed log of system operations
+   - Received requests
+   - IP change verifications
+   - DNS updates
+   - Authentication errors
    
-2. **access.log**: Log de acesso HTTP do Gunicorn
-   - Todas as requisições HTTP
-   - Status codes e tempos de resposta
+2. **access.log**: Gunicorn HTTP access log
+   - All HTTP requests
+   - Status codes and response times
    
-3. **error.log**: Log de erros do servidor Gunicorn
-   - Erros de sistema e exceções
+3. **error.log**: Gunicorn server error log
+   - System errors and exceptions
    
-4. **ips.log**: Histórico de mudanças de IP
-   - Timestamp e IP de cada mudança
+4. **ips.log**: IP change history
+   - Timestamp and IP of each change
 
-### Visualizar logs em tempo real:
+### View logs in real time:
 ```bash
-# Log de operações (mais útil para debug)
+# Operations log (most useful for debugging)
 tail -f ddns_operations.log
 
-# Logs de acesso HTTP
+# HTTP access logs
 tail -f access.log
 
-# Logs de erro do servidor
+# Server error logs
 tail -f error.log
 
-# Logs do sistema (se usando systemd)
+# System logs (if using systemd)
 sudo journalctl -u ddns-server -f
 ```
 
-### Exemplo de logs de operação:
+### Example operation logs:
 ```
-2025-06-21 01:11:13,028 - INFO - Requisição recebida - Host: teste-log, IP: 192.168.1.102, User: ddns
-2025-06-21 01:11:13,029 - INFO - Verificando mudança de IP - Atual: 192.168.1.102, Último: 192.168.1.101
-2025-06-21 01:11:13,029 - INFO - IP mudou de 192.168.1.101 para 192.168.1.102 - Iniciando atualização DNS
-2025-06-21 01:11:13,030 - INFO - Enviando requisição para DigitalOcean - Domínio: imentore.com.br, Record ID: 327101812
-2025-06-21 01:11:13,488 - INFO - DNS atualizado com sucesso! Novo IP: 192.168.1.102
+2025-06-21 01:11:13,028 - INFO - Request received - Host: teste-log, IP: 192.168.1.102, User: ddns
+2025-06-21 01:11:13,029 - INFO - Checking IP change - Current: 192.168.1.102, Last: 192.168.1.101
+2025-06-21 01:11:13,029 - INFO - IP changed from 192.168.1.101 to 192.168.1.102 - Starting DNS update
+2025-06-21 01:11:13,030 - INFO - Sending request to DigitalOcean - Domain: imentore.com.br, Record ID: 327101812
+2025-06-21 01:11:13,488 - INFO - DNS updated successfully! New IP: 192.168.1.102
 ```
 
-## Segurança em Produção
+## Production Security
 
-### Recomendações:
-1. **Use HTTPS**: Configure SSL/TLS no Gunicorn ou use um proxy reverso (nginx/Apache)
-2. **Firewall**: Bloqueie portas desnecessárias
-3. **Senhas fortes**: Altere as credenciais padrão
-4. **Monitoramento**: Configure alertas para falhas
-5. **Backup**: Faça backup do arquivo `ips.log` regularmente
+### Recommendations:
+1. **Use HTTPS**: Configure SSL/TLS in Gunicorn or use a reverse proxy (nginx/Apache)
+2. **Firewall**: Block unnecessary ports
+3. **Strong passwords**: Change default credentials
+4. **Monitoring**: Configure alerts for failures
+5. **Backup**: Regularly backup the `ips.log` file
 
-### Configuração SSL (opcional):
-Descomente e configure no `gunicorn.conf.py`:
+### SSL Configuration (optional):
+Uncomment and configure in `gunicorn.conf.py`:
 ```python
 keyfile = "/path/to/your/private.key"
 certfile = "/path/to/your/certificate.crt"
