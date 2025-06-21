@@ -1,0 +1,120 @@
+from flask import Flask, request, jsonify
+import requests
+import os
+import logging
+from datetime import datetime
+from dotenv import load_dotenv
+
+# Carrega variáveis do arquivo .env
+load_dotenv()
+
+app = Flask(__name__)
+
+# =============================================
+# CONFIGURAÇÕES - AGORA USANDO VARIÁVEIS DE AMBIENTE
+# =============================================
+
+# Credenciais de autenticação
+DDNS_USERNAME = os.getenv('DDNS_USERNAME')
+DDNS_PASSWORD = os.getenv('DDNS_PASSWORD')
+
+# Configurações do servidor
+SERVER_HOST = os.getenv('HOST', '0.0.0.0')
+SERVER_PORT = int(os.getenv('PORT', 8443))
+DEBUG_MODE = os.getenv('DEBUG', 'False').lower() == 'true'
+
+# Configurações da DigitalOcean API
+TOKEN = os.getenv('DO_TOKEN')
+DOMAIN = os.getenv('DO_DOMAIN')
+RECORD_ID = os.getenv('DO_RECORD_ID')
+
+# Arquivo de log
+LOG_FILE = "ips.log"
+
+# =============================================
+
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('ddns_operations.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+def get_last_ip():
+    """Recupera o último IP registrado no arquivo de log"""
+    if not os.path.exists(LOG_FILE):
+        return None
+    with open(LOG_FILE, "r") as f:
+        lines = f.readlines()
+        if lines:
+            # Pega a última linha e extrai o IP (formato: timestamp,ip)
+            return lines[-1].strip().split(",")[1]
+    return None
+
+def log_ip(ip):
+    """Registra o IP no arquivo de log com timestamp"""
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{datetime.now()},{ip}\n")
+
+@app.route("/ap", methods=["GET"])
+def ddns_update():
+    """Endpoint para atualização de DNS dinâmico"""
+    username = request.args.get("username")
+    password = request.args.get("password")
+    hostname = request.args.get("hostname")
+    ip = request.args.get("ip")
+    
+    logger.info(f"Requisição recebida - Host: {hostname}, IP: {ip}, User: {username}")
+
+    # Validação básica dos parâmetros obrigatórios
+    if not username or not password or not hostname or not ip:
+        logger.warning("Requisição rejeitada - Parâmetros faltando")
+        return "Missing parameters", 400
+
+    # Validação de credenciais
+    if username != DDNS_USERNAME or password != DDNS_PASSWORD:
+        logger.warning(f"Requisição rejeitada - Credenciais incorretas para user: {username}")
+        return "Unauthorized", 403
+
+    # Verifica se o IP mudou
+    last_ip = get_last_ip()
+    logger.info(f"Verificando mudança de IP - Atual: {ip}, Último: {last_ip}")
+    
+    if ip == last_ip:
+        logger.info("IP não mudou - Nenhuma ação necessária")
+        return "IP unchanged", 200
+
+    logger.info(f"IP mudou de {last_ip} para {ip} - Iniciando atualização DNS")
+
+    # Atualiza DNS na DigitalOcean
+    url = f"https://api.digitalocean.com/v2/domains/{DOMAIN}/records/{RECORD_ID}"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {TOKEN}"
+    }
+    payload = {"data": ip}
+
+    try:
+        logger.info(f"Enviando requisição para DigitalOcean - Domínio: {DOMAIN}, Record ID: {RECORD_ID}")
+        response = requests.put(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            log_ip(ip)
+            logger.info(f"DNS atualizado com sucesso! Novo IP: {ip}")
+            return "DNS updated", 200
+        else:
+            logger.error(f"Falha ao atualizar DNS - Status: {response.status_code}, Resposta: {response.text}")
+            return f"Failed to update DNS: {response.text}", 500
+    except requests.RequestException as e:
+        logger.error(f"Erro de conexão com API DigitalOcean: {str(e)}")
+        return f"Error connecting to DigitalOcean API: {str(e)}", 500
+
+if __name__ == "__main__":
+    logger.info(f"Iniciando servidor DDNS - Host: {SERVER_HOST}, Porta: {SERVER_PORT}")
+    logger.info(f"Domínio configurado: {DOMAIN}")
+    logger.info(f"Debug mode: {DEBUG_MODE}")
+    app.run(host=SERVER_HOST, port=SERVER_PORT, debug=DEBUG_MODE)
