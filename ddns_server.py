@@ -5,13 +5,13 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Carrega variáveis do arquivo .env
-load_dotenv()
+# Carrega variáveis do arquivo .env (sobrescreve variáveis de ambiente do sistema)
+load_dotenv(override=True)
 
 app = Flask(__name__)
 
 # =============================================
-# CONFIGURAÇÕES - AGORA USANDO VARIÁVEIS DE AMBIENTE
+# CONFIGURAÇÕES - CARREGADAS DO ARQUIVO .env
 # =============================================
 
 # Credenciais de autenticação
@@ -24,9 +24,9 @@ SERVER_PORT = int(os.getenv('PORT', 8443))
 DEBUG_MODE = os.getenv('DEBUG', 'False').lower() == 'true'
 
 # Configurações da DigitalOcean API
-TOKEN = os.getenv('DO_TOKEN')
-DOMAIN = os.getenv('DO_DOMAIN')
-RECORD_ID = os.getenv('DO_RECORD_ID')
+TOKEN = os.getenv('TOKEN') or os.getenv('DO_TOKEN')  # Aceita ambos os nomes
+DOMAIN = os.getenv('DOMAIN') or os.getenv('DO_DOMAIN')
+RECORD_ID = os.getenv('RECORD_ID') or os.getenv('DO_RECORD_ID')
 
 # Arquivo de log
 LOG_FILE = "ips.log"
@@ -115,8 +115,36 @@ def ddns_update():
         logger.error(f"Erro de conexão com API DigitalOcean: {str(e)}")
         return f"Error connecting to DigitalOcean API: {str(e)}", 500
 
+def print_configuration():
+    """Exibe as configurações do servidor em um quadro visual"""
+    config_lines = [
+        "=" * 60,
+        "                    DDNS SERVER CONFIGURATION",
+        "=" * 60,
+        "",
+        "# DigitalOcean API Configuration",
+        f"TOKEN        : {'*' * 20 if TOKEN else 'NOT SET'}",
+        f"DOMAIN       : {DOMAIN or 'NOT SET'}",
+        f"RECORD_ID    : {RECORD_ID or 'NOT SET'}",
+        "",
+        "# DDNS Authentication",
+        f"DDNS_USERNAME: {DDNS_USERNAME or 'NOT SET'}",
+        f"DDNS_PASSWORD: {'*' * len(DDNS_PASSWORD) if DDNS_PASSWORD else 'NOT SET'}",
+        "",
+        "# Server Configuration",
+        f"HOST         : {SERVER_HOST}",
+        f"PORT         : {SERVER_PORT}",
+        f"DEBUG        : {DEBUG_MODE}",
+        "",
+        "=" * 60,
+    ]
+    
+    for line in config_lines:
+        print(line)
+
 if __name__ == "__main__":
     logger.info(f"Iniciando servidor DDNS - Host: {SERVER_HOST}, Porta: {SERVER_PORT}")
     logger.info(f"Domínio configurado: {DOMAIN}")
     logger.info(f"Debug mode: {DEBUG_MODE}")
+    print_configuration()
     app.run(host=SERVER_HOST, port=SERVER_PORT, debug=DEBUG_MODE)
