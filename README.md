@@ -2,18 +2,18 @@
 
 Flask server for dynamic DNS updates using DigitalOcean API. Compatible with TP-Link routers and other DDNS clients.
 
-## 🚀 Features
+## Features
 
-- ✅ **DigitalOcean API Integration** - Updates DNS records automatically
-- ✅ **TP-Link Router Compatible** - Works with TP-Link DDNS clients
-- ✅ **Environment Configuration** - Secure `.env` file configuration
-- ✅ **Production Ready** - Gunicorn WSGI server with PID management
-- ✅ **Comprehensive Logging** - Multiple log files for monitoring
-- ✅ **Visual Configuration Display** - Shows all settings on startup
-- ✅ **Service Management** - Start/stop/status scripts included
-- ✅ **Systemd Integration** - Linux service configuration
+- **DigitalOcean API Integration** - Updates DNS records automatically
+- **TP-Link Router Compatible** - Works with TP-Link DDNS clients
+- **Environment Configuration** - Secure `.env` file configuration
+- **Production Ready** - Gunicorn WSGI server with PID management
+- **Comprehensive Logging** - Multiple log files for monitoring
+- **Visual Configuration Display** - Shows all settings on startup
+- **Service Management** - Start/stop/status scripts included
+- **Systemd Integration** - Linux service configuration
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ddns_tplink/
@@ -21,6 +21,7 @@ ddns_tplink/
 ├── .env                        # Environment configuration (create from .env.example)
 ├── .env.example               # Configuration template
 ├── requirements.txt           # Python dependencies
+├── SECURITY.md               # Security guide and best practices
 ├── gunicorn.conf.py          # Production server configuration
 ├── start_production.sh       # Start production server
 ├── stop_server.sh           # Stop server
@@ -34,7 +35,7 @@ ddns_tplink/
     └── ips.log           # IP change history
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 The server uses environment variables loaded from a `.env` file for secure configuration.
 
@@ -100,7 +101,7 @@ DEBUG        : False
 ============================================================
 ```
 
-## 🛠️ Installation
+## Installation
 
 ### 1. Clone Repository
 
@@ -138,7 +139,7 @@ cp .env.example .env
 nano .env
 ```
 
-## 🚀 Usage
+## Usage
 
 ### Development Mode (Testing)
 
@@ -225,7 +226,7 @@ sudo journalctl -u ddns-server -f
 sudo systemctl restart ddns-server
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### DDNS Update Endpoint
 
@@ -273,16 +274,16 @@ curl "http://example.com:8443/ddns/update?hostname=subdomain.example.com&myip=20
 5. **Username/Password:** From your `.env` file
 6. **Update URL:** `/ddns/update?hostname=[DOMAIN]&myip=[IP]&username=[USERNAME]&password=[PASSWORD]`
 
-## 📊 Logs and Monitoring
+## Logs and Monitoring
 
 ### Log Files
 
-| File | Purpose | Content |
-|------|---------|---------|
+| File                  | Purpose                | Content                                   |
+|-----------------------|------------------------|-------------------------------------------|
 | `ddns_operations.log` | Application operations | Requests, IP changes, DNS updates, errors |
-| `access.log` | HTTP access logs | All HTTP requests with status codes |
-| `error.log` | Server errors | Gunicorn and system errors |
-| `ips.log` | IP change history | Timestamp and IP for each change |
+| `access.log`          | HTTP access logs       | All HTTP requests with status codes       |
+| `error.log`           | Server errors          | Gunicorn and system errors                |
+| `ips.log`             | IP change history      | Timestamp and IP for each change          |
 
 ### Log Examples
 
@@ -337,172 +338,63 @@ lsof -i :8443
 top -p $(cat ddns_server.pid)
 ```
 
-## 🔒 Security and Production
+## Security and Production
 
-### Security Recommendations
+**IMPORTANT: This server handles authentication credentials and DNS management. Please review the [SECURITY.md](SECURITY.md) guide for detailed security recommendations.**
 
-#### 1. **Environment Security**
+### Critical Security Considerations
+
+#### **1. Credential Security**
 ```bash
-# Secure .env file permissions
-chmod 600 .env
-
-# Don't commit .env to version control
+# NEVER commit .env to version control
 echo ".env" >> .gitignore
-```
 
-#### 2. **Network Security**
-- Use strong passwords in `.env`
-- Configure firewall to allow only necessary ports
-- Consider running behind reverse proxy (nginx/Apache)
-- Use HTTPS in production (see SSL configuration below)
-
-#### 3. **Server Security**
-- Run as non-root user
-- Regularly update dependencies
-- Monitor logs for suspicious activity
-- Set up log rotation
-
-### SSL/HTTPS Configuration
-
-#### Option 1: Gunicorn SSL (Simple)
-Uncomment and configure in `gunicorn.conf.py`:
-```python
-# SSL/HTTPS Configuration
-keyfile = "/path/to/your/private.key"
-certfile = "/path/to/your/certificate.crt"
-```
-
-#### Option 2: Reverse Proxy (Recommended)
-Use nginx as reverse proxy:
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-    
-    ssl_certificate /path/to/certificate.crt;
-    ssl_certificate_key /path/to/private.key;
-    
-    location / {
-        proxy_pass http://localhost:8443;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### Backup and Maintenance
-
-```bash
-# Backup IP history
-cp ips.log ips.log.backup.$(date +%Y%m%d)
-
-# Log rotation (add to crontab)
-0 0 * * 0 /usr/sbin/logrotate /path/to/ddns-logrotate.conf
-
-# Monitor disk space
-df -h
-
-# Clean old logs (older than 30 days)
-find . -name "*.log.*" -mtime +30 -delete
-```
-
-### Performance Tuning
-
-#### Gunicorn Workers
-Edit `gunicorn.conf.py`:
-```python
-# Adjust based on CPU cores: (2 x CPU cores) + 1
-workers = 3
-
-# For CPU-bound tasks
-worker_class = "sync"
-
-# For I/O-bound tasks (if needed)
-# worker_class = "gevent"
-```
-
-#### System Limits
-```bash
-# Check current limits
-ulimit -n
-
-# Increase file descriptors (add to /etc/security/limits.conf)
-ddns_user soft nofile 65536
-ddns_user hard nofile 65536
-```
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-#### Server Won't Start
-```bash
-# Check configuration
-python -c "from ddns_server import *; print_configuration()"
-
-# Check if port is already in use
-lsof -i :8443
-
-# Check virtual environment
-which python
-pip list
-```
-
-#### DNS Updates Failing
-```bash
-# Test DigitalOcean API manually
-curl -X GET \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  "https://api.digitalocean.com/v2/domains/YOUR_DOMAIN/records"
-
-# Check network connectivity
-ping api.digitalocean.com
-
-# Verify token and record ID in .env
-```
-
-#### Permission Errors
-```bash
-# Fix file permissions
-chmod +x *.sh
+# Secure file permissions (owner read/write only)
 chmod 600 .env
-chown -R ddns_user:ddns_user /path/to/ddns_tplink/
+
+# Use strong, unique passwords
+DDNS_PASSWORD=$(openssl rand -base64 32)
 ```
 
-### Debug Mode
+#### **2. Network Security Risks**
+- **Unencrypted Traffic**: Credentials sent in plain text over HTTP
+- **Man-in-the-Middle**: Attackers can intercept DDNS requests  
+- **Credential Sniffing**: Network monitoring can capture passwords
 
-Enable debug mode in `.env`:
+#### **3. Rate Limiting (Important!)**
+Without rate limiting, attackers can:
+- Brute force your credentials
+- Perform DoS attacks
+- Abuse your DigitalOcean API quota
+
+#### **4. Input Validation**
+- IP address validation is minimal
+- No validation of hostname format
+- Potential for injection attacks
+
+### Quick Security Setup (5 minutes)
+
 ```bash
-DEBUG=true
+# 1. Generate strong password
+echo 'DDNS_PASSWORD='$(openssl rand -base64 32) >> .env
+
+# 2. Secure file permissions
+chmod 600 .env
+
+# 3. Use non-standard port
+sed -i 's/PORT=8443/PORT=9876/' .env
+
+# 4. Firewall protection (replace YOUR_ROUTER_IP)
+sudo ufw allow from YOUR_ROUTER_IP to any port 9876
+sudo ufw deny 9876
 ```
 
-Then restart server and check logs for detailed information.
+### Production Security (Recommended)
 
-## 📋 Dependencies
-
-- **Python 3.8+**
-- **Flask 3.1.1** - Web framework
-- **requests 2.31.0** - HTTP client for DigitalOcean API
-- **python-dotenv 1.0.0** - Environment configuration
-- **gunicorn 23.0.0** - Production WSGI server
-
-See `requirements.txt` for complete dependency list.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/new-feature`)
-3. Commit changes (`git commit -am 'Add new feature'`)
-4. Push to branch (`git push origin feature/new-feature`)
-5. Create Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-- **Issues**: GitHub Issues page
-- **Documentation**: This README
-- **Logs**: Check `ddns_operations.log` for detailed information
+For production use, see **[SECURITY.md](SECURITY.md)** for:
+- HTTPS/SSL configuration
+- Rate limiting implementation
+- Advanced firewall rules
+- Monitoring and intrusion detection
+- Log sanitization
+- Backup strategies
