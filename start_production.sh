@@ -36,7 +36,21 @@ pkill -f "gunicorn.*ddns_server" 2>/dev/null || true
 
 # Inicia o servidor com Gunicorn
 echo -e "${GREEN}Iniciando servidor com Gunicorn...${NC}"
-gunicorn --config gunicorn.conf.py ddns_server:app
+gunicorn --config gunicorn.conf.py ddns_server:app &
+
+# Aguarda um momento para o servidor inicializar
+sleep 2
+
+# Verifica se o PID foi criado e exibe informações
+if [ -f "ddns_server.pid" ]; then
+    PID=$(cat ddns_server.pid)
+    echo -e "${GREEN}Servidor iniciado com sucesso!${NC}"
+    echo -e "PID do processo: ${YELLOW}$PID${NC}"
+    echo -e "Arquivo PID: ${YELLOW}ddns_server.pid${NC}"
+else
+    echo -e "${RED}Erro: Arquivo PID não foi criado${NC}"
+    exit 1
+fi
 
 echo -e "${GREEN}Servidor iniciado!${NC}"
 echo -e "Logs de acesso: ${YELLOW}access.log${NC}"
