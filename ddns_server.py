@@ -70,27 +70,27 @@ def ddns_update():
     # Aceita tanto 'ip' quanto 'myip' para compatibilidade
     ip = request.args.get("ip") or request.args.get("myip")
     
-    logger.info(f"Requisição recebida - Host: {hostname}, IP: {ip}, User: {username}")
+    logger.info(f"Request received - Host: {hostname}, IP: {ip}, User: {username}")
 
     # Validação básica dos parâmetros obrigatórios
     if not username or not password or not hostname or not ip:
-        logger.warning("Requisição rejeitada - Parâmetros faltando")
+        logger.warning("Request rejected - Missing parameters")
         return "Missing parameters", 400
 
     # Validação de credenciais
     if username != DDNS_USERNAME or password != DDNS_PASSWORD:
-        logger.warning(f"Requisição rejeitada - Credenciais incorretas para user: {username}")
+        logger.warning(f"Request rejected - Invalid credentials for user: {username}")
         return "Unauthorized", 403
 
     # Verifica se o IP mudou
     last_ip = get_last_ip()
-    logger.info(f"Verificando mudança de IP - Atual: {ip}, Último: {last_ip}")
+    logger.info(f"Checking IP change - Current: {ip}, Last: {last_ip}")
     
     if ip == last_ip:
-        logger.info("IP não mudou - Nenhuma ação necessária")
+        logger.info("IP unchanged - No action needed")
         return "IP unchanged", 200
 
-    logger.info(f"IP mudou de {last_ip} para {ip} - Iniciando atualização DNS")
+    logger.info(f"IP changed from {last_ip} to {ip} - Starting DNS update")
 
     # Atualiza DNS na DigitalOcean
     url = f"https://api.digitalocean.com/v2/domains/{DOMAIN}/records/{RECORD_ID}"
@@ -101,18 +101,18 @@ def ddns_update():
     payload = {"data": ip}
 
     try:
-        logger.info(f"Enviando requisição para DigitalOcean - Domínio: {DOMAIN}, Record ID: {RECORD_ID}")
+        logger.info(f"Sending request to DigitalOcean - Domain: {DOMAIN}, Record ID: {RECORD_ID}")
         response = requests.put(url, headers=headers, json=payload)
         
         if response.status_code == 200:
             log_ip(ip)
-            logger.info(f"DNS atualizado com sucesso! Novo IP: {ip}")
+            logger.info(f"DNS updated successfully! New IP: {ip}")
             return "DNS updated", 200
         else:
-            logger.error(f"Falha ao atualizar DNS - Status: {response.status_code}, Resposta: {response.text}")
+            logger.error(f"Failed to update DNS - Status: {response.status_code}, Response: {response.text}")
             return f"Failed to update DNS: {response.text}", 500
     except requests.RequestException as e:
-        logger.error(f"Erro de conexão com API DigitalOcean: {str(e)}")
+        logger.error(f"Error connecting to DigitalOcean API: {str(e)}")
         return f"Error connecting to DigitalOcean API: {str(e)}", 500
 
 def print_configuration():
@@ -143,8 +143,8 @@ def print_configuration():
         print(line)
 
 if __name__ == "__main__":
-    logger.info(f"Iniciando servidor DDNS - Host: {SERVER_HOST}, Porta: {SERVER_PORT}")
-    logger.info(f"Domínio configurado: {DOMAIN}")
+    logger.info(f"Starting DDNS server - Host: {SERVER_HOST}, Port: {SERVER_PORT}")
+    logger.info(f"Configured domain: {DOMAIN}")
     logger.info(f"Debug mode: {DEBUG_MODE}")
     print_configuration()
     app.run(host=SERVER_HOST, port=SERVER_PORT, debug=DEBUG_MODE)

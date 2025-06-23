@@ -1,45 +1,45 @@
 #!/bin/bash
 
-# Script para parar o servidor DDNS
+# Script to stop DDNS server
 
-# Cores para output
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}Parando servidor DDNS...${NC}"
+echo -e "${YELLOW}Stopping DDNS server...${NC}"
 
-# Verifica se existe arquivo PID
+# Check if PID file exists
 if [ -f "ddns_server.pid" ]; then
     PID=$(cat ddns_server.pid)
-    echo -e "Parando processo PID: ${YELLOW}$PID${NC}"
+    echo -e "Stopping process PID: ${YELLOW}$PID${NC}"
     
-    # Tenta parar graciosamente primeiro
+    # Try to stop gracefully first
     if kill -TERM "$PID" 2>/dev/null; then
-        echo -e "${GREEN}Sinal TERM enviado ao processo $PID${NC}"
+        echo -e "${GREEN}TERM signal sent to process $PID${NC}"
         sleep 3
         
-        # Verifica se o processo ainda está rodando
+        # Check if process is still running
         if kill -0 "$PID" 2>/dev/null; then
-            echo -e "${YELLOW}Processo ainda rodando, enviando KILL...${NC}"
+            echo -e "${YELLOW}Process still running, sending KILL...${NC}"
             kill -KILL "$PID" 2>/dev/null
         fi
     else
-        echo -e "${YELLOW}Processo $PID não encontrado, tentando outros métodos...${NC}"
+        echo -e "${YELLOW}Process $PID not found, trying other methods...${NC}"
     fi
     
-    # Remove o arquivo PID
+    # Remove PID file
     rm ddns_server.pid
-    echo -e "${GREEN}Arquivo PID removido${NC}"
+    echo -e "${GREEN}PID file removed${NC}"
 else
-    echo -e "${YELLOW}Arquivo PID não encontrado, tentando parar por nome...${NC}"
+    echo -e "${YELLOW}PID file not found, trying to stop by name...${NC}"
     
-    # Para o servidor Gunicorn
+    # Stop Gunicorn server
     pkill -f "gunicorn.*ddns_server"
     
-    # Para o servidor Flask de desenvolvimento (se estiver rodando)
+    # Stop Flask development server (if running)
     pkill -f "python.*ddns_server.py"
 fi
 
-echo -e "${GREEN}Servidor parado!${NC}"
+echo -e "${GREEN}Server stopped!${NC}"
