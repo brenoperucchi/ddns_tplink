@@ -60,13 +60,15 @@ def log_ip(ip):
     with open(LOG_FILE, "a") as f:
         f.write(f"{datetime.now()},{ip}\n")
 
-@app.route("/ap", methods=["GET"])
+@app.route("/ddns/update", methods=["GET"])
+# @app.route("/ddns/update", methods=["GET"])
 def ddns_update():
     """Endpoint para atualização de DNS dinâmico"""
     username = request.args.get("username")
     password = request.args.get("password")
     hostname = request.args.get("hostname")
-    ip = request.args.get("ip")
+    # Aceita tanto 'ip' quanto 'myip' para compatibilidade
+    ip = request.args.get("ip") or request.args.get("myip")
     
     logger.info(f"Requisição recebida - Host: {hostname}, IP: {ip}, User: {username}")
 

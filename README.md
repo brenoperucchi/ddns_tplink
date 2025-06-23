@@ -82,17 +82,32 @@ sudo systemctl status ddns-server
 
 ## Usage
 
-Make a GET request to `/ap` with the following parameters:
+Make a GET request to one of the available endpoints with the following parameters:
 
+**Available endpoints:**
+- `/ddns/update` (Ruby compatibility)
+
+**Parameters:**
 - `username`: must match `DDNS_USERNAME` configured on the server
 - `password`: must match `DDNS_PASSWORD` configured on the server
-- `hostname`: host name
-- `ip`: IP address to be updated
+- `hostname`: host name (can use `[DOMAIN]` as placeholder)
+- `ip` or `myip`: IP address to be updated (can use `[IP]` as placeholder)
 
-### Usage example:
+### Usage examples:
 
+**Legacy format:**
 ```
 GET http://localhost:8443/ap?username=ddns&password=senhaescondida&hostname=example&ip=192.168.1.100
+```
+
+**Ruby-compatible format:**
+```
+GET http://localhost:8443/ddns/update?hostname=[DOMAIN]&myip=[IP]&username=[USERNAME]&password=[PASSWORD]
+```
+
+**Real example with actual values:**
+```
+GET http://www.imentore.com.br:8443/ddns/update?hostname=imentore.com.br&myip=192.168.1.100&username=ddns&password=senhaescondida
 ```
 
 **Note**: Replace `localhost:8443` with the host and port configured in the `SERVER_HOST` and `SERVER_PORT` variables.
