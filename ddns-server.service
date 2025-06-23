@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=forking
-User=www-data
-Group=www-data
-WorkingDirectory=/path/to/your/ddns_tplink
-Environment=PATH=/path/to/your/ddns_tplink/.venv/bin
-ExecStart=/path/to/your/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py --daemon ddns_server:app
+User=app
+Group=app
+WorkingDirectory=/home/app/ddns_tplink
+Environment=PATH=/home/app/ddns_tplink/.venv/bin
+ExecStart=/home/app/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py --daemon ddns_server:app
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=5
