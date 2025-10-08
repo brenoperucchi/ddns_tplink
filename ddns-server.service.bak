@@ -1,0 +1,20 @@
+[Unit]
+Description=DDNS TP-Link Server
+After=network.target
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/your/ddns_tplink
+Environment=PATH=/path/to/your/ddns_tplink/.venv/bin
+ExecStart=/path/to/your/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py --daemon ddns_server:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

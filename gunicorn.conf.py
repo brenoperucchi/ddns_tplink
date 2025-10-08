@@ -5,7 +5,7 @@ bind = "0.0.0.0:8443"
 backlog = 2048
 
 # Trabalhadores
-workers = 2
+workers = 1 
 worker_class = "sync"
 worker_connections = 1000
 timeout = 30
