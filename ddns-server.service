@@ -6,9 +6,11 @@ After=network.target
 Type=forking
 User=app
 Group=app
-WorkingDirectory=/home/app/ddns_tplink
-Environment=PATH=/home/app/ddns_tplink/.venv/bin
-ExecStart=/home/app/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py --daemon ddns_server:app
+WorkingDirectory=/home/app/projects/ddns_tplink
+EnvironmentFile=/home/app/projects/ddns_tplink/.env
+Environment=PATH=/home/app/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PIDFile=/home/app/projects/ddns_tplink/ddns_server.pid
+ExecStart=/home/app/.local/bin/gunicorn --config gunicorn.conf.py --daemon --pid ddns_server.pid ddns_server:app
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=5
