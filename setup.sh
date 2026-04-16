@@ -394,6 +394,15 @@ import sys,json; print(json.load(sys.stdin)['result'][${CHOICE}-1]['name'])
 
 fi  # end provider-specific steps
 
+# Derive WAN1 hostname (what the router sends as the hostname= parameter)
+if [ "$PROVIDER" = "duckdns" ]; then
+    WAN1_HOSTNAME="${DUCK_SUBDOMAIN}.duckdns.org"
+elif [ -n "${RECORD_NAME:-}" ]; then
+    WAN1_HOSTNAME="$RECORD_NAME"
+else
+    WAN1_HOSTNAME="$DOMAIN"
+fi
+
 # =============================================
 # STEPS 4-6: DDNS credentials + port (shared)
 # =============================================
@@ -431,6 +440,190 @@ read -r -p "  Server port [9876]: " PORT
 PORT=${PORT:-9876}
 
 # =============================================
+# SECOND WAN (optional)
+# =============================================
+echo ""
+echo -e "${BLUE}${BOLD}── Optional: Second WAN interface ──${NC}"
+echo ""
+echo -e "  If your router has two internet connections (WAN + WAN/LAN1),"
+echo -e "  each can update a different DNS record independently."
+echo ""
+read -r -p "  Add a second WAN interface? [y/N]: " SECOND_WAN
+SECOND_WAN=${SECOND_WAN:-N}
+
+MULTI_WAN=false
+WAN2_PROVIDER=""
+WAN2_HOSTNAME=""
+
+if [[ "$SECOND_WAN" =~ ^[Yy]$ ]]; then
+    MULTI_WAN=true
+
+    echo ""
+    echo -e "${BLUE}${BOLD}── WAN2: Provider ──${NC}"
+    echo ""
+    echo -e "  ${BOLD}1)${NC} DuckDNS"
+    echo -e "  ${BOLD}2)${NC} Cloudflare"
+    echo -e "  ${BOLD}3)${NC} DigitalOcean"
+    echo ""
+    while true; do
+        read -r -p "  Provider for WAN2 [1/2/3]: " WAN2_CHOICE
+        case "$WAN2_CHOICE" in
+            1) WAN2_PROVIDER="duckdns";      break ;;
+            2) WAN2_PROVIDER="cloudflare";   break ;;
+            3) WAN2_PROVIDER="digitalocean"; break ;;
+            *) echo -e "  ${RED}Enter 1, 2 or 3.${NC}" ;;
+        esac
+    done
+    echo -e "  ${GREEN}WAN2 provider: ${BOLD}${WAN2_PROVIDER}${NC}"
+
+    if [ "$WAN2_PROVIDER" = "duckdns" ]; then
+        echo ""
+        echo -e "${BLUE}${BOLD}── WAN2: DuckDNS credentials ──${NC}"
+        echo ""
+        while true; do
+            read -r -s -p "  DuckDNS token for WAN2 (input hidden): " WAN2_DUCK_TOKEN
+            echo ""
+            [ ${#WAN2_DUCK_TOKEN} -ge 10 ] && break
+            echo -e "  ${RED}Token too short.${NC}"
+        done
+        while true; do
+            read -r -p "  DuckDNS subdomain for WAN2 (e.g. myhome2): " WAN2_DUCK_SUBDOMAIN
+            if [ -z "$WAN2_DUCK_SUBDOMAIN" ]; then
+                echo -e "  ${RED}Cannot be empty.${NC}"
+            elif [[ "$WAN2_DUCK_SUBDOMAIN" =~ \. ]]; then
+                echo -e "  ${RED}Enter only the subdomain part (e.g. 'myhome2', not 'myhome2.duckdns.org').${NC}"
+            else
+                break
+            fi
+        done
+        WAN2_HOSTNAME="${WAN2_DUCK_SUBDOMAIN}.duckdns.org"
+        echo -e "  ${GREEN}WAN2 hostname: ${BOLD}${WAN2_HOSTNAME}${NC}"
+
+    elif [ "$WAN2_PROVIDER" = "digitalocean" ]; then
+        echo ""
+        echo -e "${BLUE}${BOLD}── WAN2: DigitalOcean credentials ──${NC}"
+        echo ""
+        while true; do
+            read -r -s -p "  DigitalOcean API token for WAN2 (input hidden): " WAN2_DO_TOKEN
+            echo ""
+            [ ${#WAN2_DO_TOKEN} -ge 20 ] && break
+            echo -e "  ${RED}Token too short.${NC}"
+        done
+        while true; do
+            read -r -p "  Domain for WAN2 (e.g. example.com): " WAN2_DO_DOMAIN
+            [ -n "$WAN2_DO_DOMAIN" ] && break
+            echo -e "  ${RED}Cannot be empty.${NC}"
+        done
+        echo ""
+        echo -e "  Fetching A records for ${BOLD}${WAN2_DO_DOMAIN}${NC} ..."
+        WAN2_RECORDS=$(curl -s -X GET \
+            -H "Authorization: Bearer ${WAN2_DO_TOKEN}" \
+            "https://api.digitalocean.com/v2/domains/${WAN2_DO_DOMAIN}/records?type=A&per_page=100" 2>/dev/null)
+
+        if echo "$WAN2_RECORDS" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'domain_records' in d" 2>/dev/null; then
+            WAN2_RCOUNT=$(echo "$WAN2_RECORDS" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('domain_records',[])))")
+            if [ "$WAN2_RCOUNT" -gt 0 ]; then
+                echo -e "  ${GREEN}Found ${WAN2_RCOUNT} record(s):${NC}"
+                echo ""
+                echo "$WAN2_RECORDS" | python3 -c "
+import sys,json
+domain='${WAN2_DO_DOMAIN}'
+data=json.load(sys.stdin)
+for i,r in enumerate(data.get('domain_records',[]),1):
+    name=r.get('name','?')
+    display=domain if name=='@' else f'{name}.{domain}'
+    print(f'    {i}) {display}  (ID: {r[\"id\"]}, IP: {r[\"data\"]})')
+"
+                while true; do
+                    read -r -p "  Choose record for WAN2: " WAN2_SEL
+                    [ -z "$WAN2_SEL" ] && continue
+                    if [[ "$WAN2_SEL" =~ ^[0-9]+$ ]] && [ "$WAN2_SEL" -ge 1 ] && [ "$WAN2_SEL" -le "$WAN2_RCOUNT" ]; then
+                        WAN2_RECORD_ID=$(echo "$WAN2_RECORDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['domain_records'][${WAN2_SEL}-1]['id'])")
+                        WAN2_HOSTNAME=$(echo "$WAN2_RECORDS" | python3 -c "
+import sys,json
+domain='${WAN2_DO_DOMAIN}'
+r=json.load(sys.stdin)['domain_records'][${WAN2_SEL}-1]
+name=r.get('name','?')
+print(domain if name=='@' else f'{name}.{domain}')
+")
+                        echo -e "  ${GREEN}Selected: ${WAN2_HOSTNAME} (ID: ${WAN2_RECORD_ID})${NC}"
+                        break
+                    else
+                        WAN2_RECORD_ID="$WAN2_SEL"
+                        read -r -p "  Hostname the router sends for WAN2: " WAN2_HOSTNAME
+                        break
+                    fi
+                done
+            else
+                echo -e "  ${YELLOW}No A records found.${NC}"
+                read -r -p "  Record ID for WAN2: " WAN2_RECORD_ID
+                read -r -p "  Hostname the router sends for WAN2: " WAN2_HOSTNAME
+            fi
+        else
+            echo -e "  ${YELLOW}Could not fetch records.${NC}"
+            read -r -p "  Record ID for WAN2: " WAN2_RECORD_ID
+            read -r -p "  Hostname the router sends for WAN2: " WAN2_HOSTNAME
+        fi
+
+    else  # cloudflare WAN2
+        echo ""
+        echo -e "${BLUE}${BOLD}── WAN2: Cloudflare credentials ──${NC}"
+        echo ""
+        while true; do
+            read -r -s -p "  Cloudflare API token for WAN2 (input hidden): " WAN2_CF_TOKEN
+            echo ""
+            [ ${#WAN2_CF_TOKEN} -ge 20 ] && break
+            echo -e "  ${RED}Token too short.${NC}"
+        done
+        while true; do
+            read -r -p "  Domain for WAN2 (e.g. example.com): " WAN2_CF_DOMAIN
+            [ -n "$WAN2_CF_DOMAIN" ] && break
+            echo -e "  ${RED}Cannot be empty.${NC}"
+        done
+        WAN2_ZONE_JSON=$(curl -s -H "Authorization: Bearer ${WAN2_CF_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/zones?name=${WAN2_CF_DOMAIN}&status=active" 2>/dev/null)
+        WAN2_CF_ZONE_ID=$(echo "$WAN2_ZONE_JSON" | python3 -c "
+import sys,json
+data=json.load(sys.stdin)
+zones=data.get('result',[])
+print(zones[0]['id'] if zones else '')
+" 2>/dev/null)
+        if [ -z "$WAN2_CF_ZONE_ID" ]; then
+            read -r -p "  Zone ID for WAN2: " WAN2_CF_ZONE_ID
+        else
+            echo -e "  ${GREEN}Zone ID: ${BOLD}${WAN2_CF_ZONE_ID}${NC}"
+        fi
+        WAN2_CF_RECORDS=$(curl -s -H "Authorization: Bearer ${WAN2_CF_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/zones/${WAN2_CF_ZONE_ID}/dns_records?type=A&per_page=100" 2>/dev/null)
+        WAN2_RCOUNT=$(echo "$WAN2_CF_RECORDS" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('result',[])))" 2>/dev/null || echo "0")
+        if [ "$WAN2_RCOUNT" -gt 0 ]; then
+            echo "$WAN2_CF_RECORDS" | python3 -c "
+import sys,json
+for i,r in enumerate(json.load(sys.stdin).get('result',[]),1):
+    print(f'    {i}) {r[\"name\"]}  (ID: {r[\"id\"]}, IP: {r[\"content\"]})')
+"
+            while true; do
+                read -r -p "  Choose record for WAN2: " WAN2_SEL
+                [ -z "$WAN2_SEL" ] && continue
+                if [[ "$WAN2_SEL" =~ ^[0-9]+$ ]] && [ "$WAN2_SEL" -ge 1 ] && [ "$WAN2_SEL" -le "$WAN2_RCOUNT" ]; then
+                    WAN2_CF_RECORD_ID=$(echo "$WAN2_CF_RECORDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'][${WAN2_SEL}-1]['id'])")
+                    WAN2_HOSTNAME=$(echo "$WAN2_CF_RECORDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'][${WAN2_SEL}-1]['name'])")
+                    echo -e "  ${GREEN}Selected: ${WAN2_HOSTNAME} (ID: ${WAN2_CF_RECORD_ID})${NC}"
+                    break
+                else
+                    WAN2_CF_RECORD_ID="$WAN2_SEL"
+                    read -r -p "  Hostname the router sends for WAN2: " WAN2_HOSTNAME
+                    break
+                fi
+            done
+        else
+            read -r -p "  Record ID for WAN2: " WAN2_CF_RECORD_ID
+            read -r -p "  Hostname the router sends for WAN2: " WAN2_HOSTNAME
+        fi
+    fi
+fi  # end second WAN
+
+# =============================================
 # SUMMARY
 # =============================================
 echo ""
@@ -439,19 +632,25 @@ echo "============================================================"
 echo "                   Configuration Summary"
 echo "============================================================"
 echo -e "${NC}"
-echo -e "  PROVIDER       : ${BOLD}${PROVIDER}${NC}"
-if [ "$PROVIDER" = "duckdns" ]; then
-    echo -e "  DUCK_TOKEN     : ${BOLD}${DUCK_TOKEN:0:8}...${DUCK_TOKEN: -4}${NC}"
-    echo -e "  DUCK_DOMAIN    : ${BOLD}${DUCK_SUBDOMAIN}${NC}  (→ ${DOMAIN})"
-elif [ "$PROVIDER" = "digitalocean" ]; then
-    echo -e "  TOKEN          : ${BOLD}${DO_TOKEN:0:8}...${DO_TOKEN: -4}${NC}"
-    echo -e "  DOMAIN         : ${BOLD}${DOMAIN}${NC}"
-    echo -e "  RECORD_ID      : ${BOLD}${RECORD_ID}${NC}"
+if [ "$MULTI_WAN" = "true" ]; then
+    echo -e "  MODE           : ${BOLD}multi-WAN${NC}"
+    echo -e "  WAN1           : ${BOLD}${WAN1_HOSTNAME}${NC}  (${PROVIDER})"
+    echo -e "  WAN2           : ${BOLD}${WAN2_HOSTNAME}${NC}  (${WAN2_PROVIDER})"
 else
-    echo -e "  CF_TOKEN       : ${BOLD}${CF_TOKEN:0:8}...${CF_TOKEN: -4}${NC}"
-    echo -e "  CF_ZONE_ID     : ${BOLD}${CF_ZONE_ID}${NC}"
-    echo -e "  CF_RECORD_ID   : ${BOLD}${RECORD_ID}${NC}"
-    echo -e "  DOMAIN         : ${BOLD}${DOMAIN}${NC}"
+    echo -e "  PROVIDER       : ${BOLD}${PROVIDER}${NC}"
+    if [ "$PROVIDER" = "duckdns" ]; then
+        echo -e "  DUCK_TOKEN     : ${BOLD}${DUCK_TOKEN:0:8}...${DUCK_TOKEN: -4}${NC}"
+        echo -e "  DUCK_DOMAIN    : ${BOLD}${DUCK_SUBDOMAIN}${NC}  (→ ${DOMAIN})"
+    elif [ "$PROVIDER" = "digitalocean" ]; then
+        echo -e "  TOKEN          : ${BOLD}${DO_TOKEN:0:8}...${DO_TOKEN: -4}${NC}"
+        echo -e "  DOMAIN         : ${BOLD}${DOMAIN}${NC}"
+        echo -e "  RECORD_ID      : ${BOLD}${RECORD_ID}${NC}"
+    else
+        echo -e "  CF_TOKEN       : ${BOLD}${CF_TOKEN:0:8}...${CF_TOKEN: -4}${NC}"
+        echo -e "  CF_ZONE_ID     : ${BOLD}${CF_ZONE_ID}${NC}"
+        echo -e "  CF_RECORD_ID   : ${BOLD}${RECORD_ID}${NC}"
+        echo -e "  DOMAIN         : ${BOLD}${DOMAIN}${NC}"
+    fi
 fi
 echo -e "  DDNS_USERNAME  : ${BOLD}${DDNS_USERNAME}${NC}"
 echo -e "  DDNS_PASSWORD  : ${BOLD}${DDNS_PASSWORD}${NC}"
@@ -472,7 +671,63 @@ fi
 echo ""
 echo -e "${YELLOW}Writing .env file...${NC}"
 
-if [ "$PROVIDER" = "duckdns" ]; then
+if [ "$MULTI_WAN" = "true" ]; then
+    # ── Write endpoints.json ──────────────────────────────────────
+    echo -e "${YELLOW}Writing endpoints.json...${NC}"
+
+    # Build WAN1 entry
+    if [ "$PROVIDER" = "duckdns" ]; then
+        WAN1_JSON="\"duck_token\": \"${DUCK_TOKEN}\", \"duck_domain\": \"${DUCK_SUBDOMAIN}\""
+    elif [ "$PROVIDER" = "digitalocean" ]; then
+        WAN1_JSON="\"token\": \"${DO_TOKEN}\", \"domain\": \"${DOMAIN}\", \"record_id\": \"${RECORD_ID}\""
+    else
+        WAN1_JSON="\"cf_token\": \"${CF_TOKEN}\", \"zone_id\": \"${CF_ZONE_ID}\", \"record_id\": \"${RECORD_ID}\""
+    fi
+
+    # Build WAN2 entry
+    if [ "$WAN2_PROVIDER" = "duckdns" ]; then
+        WAN2_JSON="\"duck_token\": \"${WAN2_DUCK_TOKEN}\", \"duck_domain\": \"${WAN2_DUCK_SUBDOMAIN}\""
+    elif [ "$WAN2_PROVIDER" = "digitalocean" ]; then
+        WAN2_JSON="\"token\": \"${WAN2_DO_TOKEN}\", \"domain\": \"${WAN2_DO_DOMAIN}\", \"record_id\": \"${WAN2_RECORD_ID}\""
+    else
+        WAN2_JSON="\"cf_token\": \"${WAN2_CF_TOKEN}\", \"zone_id\": \"${WAN2_CF_ZONE_ID}\", \"record_id\": \"${WAN2_CF_RECORD_ID}\""
+    fi
+
+    cat > "$SCRIPT_DIR/endpoints.json" << EPEOF
+{
+  "${WAN1_HOSTNAME}": {
+    "provider": "${PROVIDER}",
+    ${WAN1_JSON}
+  },
+  "${WAN2_HOSTNAME}": {
+    "provider": "${WAN2_PROVIDER}",
+    ${WAN2_JSON}
+  }
+}
+EPEOF
+    chmod 600 "$SCRIPT_DIR/endpoints.json"
+    echo -e "  ${GREEN}endpoints.json created (600).${NC}"
+
+    # ── Write .env for multi mode ─────────────────────────────────
+    cat > "$SCRIPT_DIR/.env" << ENVEOF
+# DDNS Server Configuration
+# Generated by setup.sh on $(date '+%Y-%m-%d %H:%M:%S')
+
+PROVIDER=multi
+ENDPOINTS_FILE=endpoints.json
+
+# DDNS Authentication
+DDNS_USERNAME=${DDNS_USERNAME}
+DDNS_PASSWORD=${DDNS_PASSWORD}
+
+# Server
+HOST=127.0.0.1
+PORT=${PORT}
+DEBUG=false
+TRUST_PROXY=true
+ENVEOF
+
+elif [ "$PROVIDER" = "duckdns" ]; then
     cat > "$SCRIPT_DIR/.env" << ENVEOF
 # DDNS Server Configuration
 # Generated by setup.sh on $(date '+%Y-%m-%d %H:%M:%S')
