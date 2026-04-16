@@ -1,262 +1,196 @@
 # DDNS TP-Link Server
 
-Flask server that updates a DigitalOcean DNS record from a DDNS client (TP-Link ER605 and similar routers). Designed to sit behind nginx with a Let's Encrypt certificate obtained via the DigitalOcean DNS-01 challenge — so the router can talk to it over HTTPS even on a host where ports 80/443 are already taken by another stack.
+Flask server that receives IP updates from a TP-Link router (ER605 and similar) and updates a DNS A record via a provider API. Runs behind nginx + Let's Encrypt so the router connects over HTTPS.
 
-## Features
+## Prerequisites
 
-- **DigitalOcean API integration** — updates an A record when the IP changes
-- **TP-Link ER605 compatible** — works with the "Custom" DDNS profile
-- **Hardened by default** — rate limiting, constant-time credential check, hostname/IP validation, log sanitization, `X-Forwarded-For` support
-- **Credentials never logged** — gunicorn and nginx access logs strip the query string
-- **Interactive installer** — `install.sh` walks through the whole `.env` setup and auto-detects your DNS record
-- **Nginx + TLS helper** — `setup_nginx.sh` obtains a cert via DNS-01 and configures an HTTPS vhost on a custom port
-- **Systemd unit included** — runs unattended as the `app` user
+| Requirement | Notes |
+|---|---|
+| Linux host with `sudo` | Any distro (apt / dnf / pacman / zypper / apk) |
+| Python 3.8+ | `curl` must also be installed |
+| A DNS provider with API access | See options below |
+| A public hostname for this server | A fixed A record pointing to this machine's IP |
 
-## Requirements
+### DNS provider options
 
-- Linux host with `sudo`
-- Python 3.10+
-- A domain managed by DigitalOcean DNS
-- A DigitalOcean API token with **read + write** scope
-- A public DNS A record pointing to this server (separate from the DDNS record you plan to update)
+| Provider | Cost | Own domain needed | Status |
+|---|---|---|---|
+| **DuckDNS** | Free | No — gets `*.duckdns.org` | Supported — **default** |
+| **Cloudflare** | Free | Yes | Supported |
+| **DigitalOcean** | Free tier / paid | Yes | Supported |
+
+- **DuckDNS** — easiest start. Create a free account at duckdns.org, get a token and a free subdomain (e.g. `myhome.duckdns.org`). No domain purchase needed.
+- **Cloudflare** — best option if you already have a domain. Free tier covers unlimited DNS updates and the API is very reliable.
+- **DigitalOcean** — for users who already manage their domain through DigitalOcean DNS.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/yourusername/ddns_tplink.git
 cd ddns_tplink
-
-# 1. Create venv and install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Interactive configuration (writes .env)
-./install.sh
-
-# 3. Nginx + Let's Encrypt in front (recommended)
-./setup_nginx.sh
-
-# 4. Run as a systemd service
-sudo cp ddns-server.service /etc/systemd/system/ddns-server.service
-sudo nano /etc/systemd/system/ddns-server.service   # adjust paths if needed
-sudo systemctl daemon-reload
-sudo systemctl enable --now ddns-server
+./setup.sh
 ```
 
-## Installation in detail
+`setup.sh` is a single interactive script that handles everything:
 
-### 1. Clone and install dependencies
+1. Collects your DNS provider credentials
+2. Creates a virtual environment and installs Python dependencies
+3. Tests the API connection before proceeding
+4. *(Optional)* Configures nginx + Let's Encrypt TLS on a custom HTTPS port
+5. *(Optional)* Installs and enables a systemd service
+
+## What setup.sh does, step by step
+
+### .env configuration
+
+The script first asks which DNS provider you want to use, then collects:
+
+**DuckDNS** (default)
+- Token — shown at the top of duckdns.org after login
+- Subdomain — the `*.duckdns.org` name you created (enter only the subdomain part)
+- Token is validated live; no record ID needed
+
+**Cloudflare**
+- API token (dash.cloudflare.com → My Profile → API Tokens → "Edit zone DNS" template)
+- Domain — Zone ID is auto-detected from the domain name
+- Record ID — auto-fetched from the zone, pick from a numbered list
+
+**DigitalOcean**
+- API token (cloud.digitalocean.com → API → Tokens, Read + Write)
+- Domain managed by DigitalOcean DNS
+- Record ID — auto-fetched from the API, pick from a numbered list
+
+**All providers:**
+- **DDNS username / password** — credentials the router will send; password is auto-generated
+- **Internal port** — gunicorn binds here on `127.0.0.1` (default `9876`)
+
+The resulting `.env` is written with `chmod 600`.
+
+### nginx + TLS (optional but recommended)
+
+Credentials travel in the URL, so HTTPS is required end-to-end. The script:
+
+- Installs `nginx`, `certbot`, and the DigitalOcean DNS plugin
+- Obtains a Let's Encrypt certificate via **DNS-01** (no port 80 needed)
+- Writes a hardened nginx vhost on a **custom port** (default `8443`) — safe if 80/443 are already used
+- Opens the port in `ufw` or `firewalld` if active
+
+> Remember to also open the chosen port in your **cloud firewall** (DigitalOcean Networking → Firewalls, etc.).
+
+### systemd service (optional)
+
+If selected, the script generates and enables a `ddns-server.service` unit with the correct paths for your current user, so the server starts on boot and restarts on failure.
 
 ```bash
-git clone https://github.com/yourusername/ddns_tplink.git
-cd ddns_tplink
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+sudo systemctl status  ddns-server
+sudo systemctl restart ddns-server
+sudo journalctl -u     ddns-server -f
 ```
 
-### 2. Run the interactive installer
+## TP-Link ER605 — DDNS configuration
 
-`install.sh` writes a secure `.env` file (mode 600) and tests the DigitalOcean API for you. It asks for:
+Go to **Network → Dynamic DNS → Add** and choose **Custom**.
 
-1. **DigitalOcean API token** — create at https://cloud.digitalocean.com/account/api/tokens (read + write)
-2. **Domain** — must be listed under https://cloud.digitalocean.com/networking/domains
-3. **Record ID** — the installer fetches all A records and lets you pick one from a numbered list; you can also paste an ID manually
-4. **DDNS username** — any label the router will send (e.g. `ddns`)
-5. **DDNS password** — auto-generated with `secrets.token_urlsafe(24)`; **copy it immediately**, you'll paste it into the router
-6. **Server port** — internal port gunicorn binds to on `127.0.0.1` (default `9876`)
+The router shows an **Update URL** field with this hint:
+
+> *Enter the URL in format of `http://[USERNAME]:[PASSWORD]@hostname/path?hostname=[DOMAIN]&myip=[IP]`*
+
+**Ignore that example format.** Our server reads credentials as query parameters, not as Basic Auth in the URL. Use this URL instead:
+
+```
+https://<public-hostname>:<https-port>/ddns/update?hostname=[DOMAIN]&myip=[IP]&username=[USERNAME]&password=[PASSWORD]
+```
+
+Real example (replace with your hostname and port):
+```
+https://ddns.example.com:8443/ddns/update?hostname=[DOMAIN]&myip=[IP]&username=[USERNAME]&password=[PASSWORD]
+```
+
+| Field | Value |
+|---|---|
+| Service Provider | Custom |
+| Update URL | the URL above |
+| Domain Name | the A record to update, e.g. `home.example.com` |
+| Username | value of `DDNS_USERNAME` from `.env` |
+| Password | value of `DDNS_PASSWORD` from `.env` |
+
+`[DOMAIN]`, `[IP]`, `[USERNAME]`, `[PASSWORD]` are **literal placeholders** — the router substitutes them with real values at update time. Do not replace them manually.
+
+## Manual startup (without systemd)
 
 ```bash
-./install.sh
+./start_production.sh      # gunicorn in background
+sudo journalctl -u ddns-server -f   # if using systemd
 ```
 
-At the end the installer prints a summary and runs a live test against the DigitalOcean API so you know the token and record ID are valid before you start the server.
-
-### 3. Put nginx + TLS in front (recommended)
-
-The router will send credentials in the URL query string, so the connection **must** be HTTPS end-to-end. `setup_nginx.sh` handles everything:
-
-```bash
-./setup_nginx.sh
-```
-
-It will:
-
-1. Clean up any previous DDNS nginx vhost
-2. Install `nginx`, `certbot`, and `python3-certbot-dns-digitalocean` if missing
-3. Ask for a **public hostname** (e.g. `ddns.example.com`) that already points at this server
-4. Ask for an **email** for Let's Encrypt expiration notifications
-5. Ask for an **HTTPS port** (default `8443` — useful when 443 is already taken by another stack)
-6. Write `/etc/letsencrypt/digitalocean.ini` with your API token (mode 600, root-owned) and request a certificate via the **DNS-01** challenge — no port 80 required
-7. Write an nginx vhost at `/etc/nginx/sites-available/ddns-server` with:
-   - TLS 1.2/1.3, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`
-   - Rate limit: 10 req/min per client IP (`ddns_limit` zone)
-   - Access log format **without** the query string (credentials are never written to disk)
-   - Only `/ddns/update` and `/health` are exposed; everything else returns 404
-8. Reload nginx and open the chosen port in `ufw` if active
-
-After this, your endpoint is `https://<public-hostname>:<https-port>/ddns/update`.
-
-> **Don't forget** to open the chosen HTTPS port on your cloud firewall (DigitalOcean Networking → Firewalls, AWS security groups, etc.) — `ufw` only covers the local firewall.
-
-### 4. Install as a systemd service
-
-The repo ships a ready-to-use unit file. Paths assume `/home/app/projects/ddns_tplink`; adjust if needed.
-
-```bash
-sudo cp ddns-server.service /etc/systemd/system/ddns-server.service
-sudo nano /etc/systemd/system/ddns-server.service    # check WorkingDirectory / ExecStart
-sudo systemctl daemon-reload
-sudo systemctl enable --now ddns-server
-sudo systemctl status ddns-server
-```
-
-Logs: `sudo journalctl -u ddns-server -f`
-
-### 5. Configure the TP-Link ER605 (or compatible router)
-
-**Network → Dynamic DNS → Add → Custom**
-
-| Field            | Value                                                                                          |
-|------------------|------------------------------------------------------------------------------------------------|
-| Service Provider | Custom                                                                                         |
-| Server URL       | `https://<public-hostname>:<https-port>/ddns/update?hostname=[DOMAIN]&myip=[IP]&username=[USERNAME]&password=[PASSWORD]` |
-| Domain Name      | the record you want to update, e.g. `home.example.com`                                         |
-| Username         | the value from `DDNS_USERNAME`                                                                 |
-| Password         | the value from `DDNS_PASSWORD`                                                                 |
-
-`[DOMAIN]`, `[IP]`, `[USERNAME]`, `[PASSWORD]` are **literal placeholders** — the router substitutes them at request time.
-
-## Manual configuration (if you skip `install.sh`)
-
-Create `.env` at the project root:
-
-```bash
-# DigitalOcean API
-TOKEN=dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-DOMAIN=example.com
-RECORD_ID=123456789
-
-# DDNS credentials (used by the router)
-DDNS_USERNAME=ddns
-DDNS_PASSWORD=change-me-strong-password
-
-# Server
-HOST=127.0.0.1    # bind to loopback; nginx proxies in front
-PORT=9876
-DEBUG=false
-
-# Honor X-Forwarded-For from nginx (for rate limiting and logging)
-TRUST_PROXY=true
-```
-
-```bash
-chmod 600 .env
-```
-
-## Running manually (no systemd)
-
-```bash
-# Development (Flask dev server)
-python3 ddns_server.py
-
-# Production (gunicorn, foreground)
-gunicorn --config gunicorn.conf.py ddns_server:app
-
-# Production (detached with PID file)
-./start_production.sh
-./status_server.sh
-./stop_server.sh
-```
-
-## API
+## API reference
 
 ### `GET /ddns/update`
 
-| Parameter          | Description                                        |
-|--------------------|----------------------------------------------------|
-| `username`         | must match `DDNS_USERNAME`                         |
-| `password`         | must match `DDNS_PASSWORD`                         |
-| `hostname`         | RFC 1123 hostname (validated)                      |
-| `ip` or `myip`     | public IPv4 (private/reserved/loopback rejected)   |
+| Parameter | Description |
+|---|---|
+| `username` | must match `DDNS_USERNAME` |
+| `password` | must match `DDNS_PASSWORD` |
+| `hostname` | RFC 1123 hostname |
+| `ip` or `myip` | public IPv4 only |
 
-| Response              | Code | Meaning                                |
-|-----------------------|------|----------------------------------------|
-| `IP unchanged`        | 200  | current IP matches the last recorded   |
-| `DNS updated`         | 200  | record updated on DigitalOcean         |
-| `Missing parameters`  | 400  | hostname or IP missing (after auth)    |
-| `Invalid hostname`    | 400  | hostname failed validation             |
-| `Invalid IP`          | 400  | IP not a routable public IPv4          |
-| `Unauthorized`        | 403  | bad credentials                        |
-| `Too many requests`   | 429  | rate limit tripped                     |
-| `Failed to update DNS`| 502  | DigitalOcean API returned an error     |
-| `Upstream timeout`    | 504  | DigitalOcean API did not respond       |
+| Response | Code | Meaning |
+|---|---|---|
+| `IP unchanged` | 200 | IP already matches the last recorded value |
+| `DNS updated` | 200 | A record updated (DigitalOcean or Cloudflare) |
+| `Unauthorized` | 403 | wrong credentials |
+| `Missing parameters` | 400 | hostname or IP absent |
+| `Invalid hostname` | 400 | hostname failed RFC 1123 validation |
+| `Invalid IP` | 400 | private / reserved / non-public IPv4 |
+| `Too many requests` | 429 | rate limit: 10 req/min per IP |
+| `Failed to update DNS` | 502 | DNS provider API returned an error |
+| `Upstream timeout` | 504 | provider API did not respond |
 
 ### `GET /health`
 
-Returns `ok` (200). Exempt from rate limiting.
+Returns `ok` (200). Rate-limit exempt.
 
-### Quick manual test
+## Security
 
-```bash
-curl "https://ddns.example.com:8443/ddns/update?username=ddns&password=SECRET&hostname=home.example.com&myip=$(curl -s https://api.ipify.org)"
-```
+- `.env` is `chmod 600` — never commit it
+- Credentials compared with `hmac.compare_digest` (constant-time, no timing attacks)
+- Gunicorn and nginx strip the query string from access logs (credentials never written to disk)
+- Rate limiting at both nginx (10 req/min) and Flask (60/h default)
+- `TRUST_PROXY=true` makes rate limiting use the real client IP behind nginx
+- Only `/ddns/update` and `/health` are exposed; everything else returns 404
 
-## Security notes
-
-- `.env` is chmod 600 and must never be committed
-- DDNS password is auto-generated (URL-safe, 24 bytes) and stored only in `.env` and your router
-- Credentials are compared with `hmac.compare_digest` (constant-time)
-- Flask: `MAX_CONTENT_LENGTH=4KB`; non-DDNS routes return 404
-- Gunicorn and nginx strip the query string from access logs
-- Rate limiting: 10 req/min per IP at nginx + 10 req/min at Flask (`60/h` default)
-- When running behind nginx, set `TRUST_PROXY=true` so rate limiting and logs see the real client IP
-- Hostnames are validated (RFC 1123); IPs must be public IPv4
-
-See [SECURITY.md](SECURITY.md) for further hardening.
+See [SECURITY.md](SECURITY.md) for details.
 
 ## Logs
 
-| File                   | Content                                                |
-|------------------------|--------------------------------------------------------|
-| `ddns_operations.log`  | app events: auth failures, IP changes, DO API errors   |
-| `access.log`           | gunicorn access log (query string stripped)            |
-| `error.log`            | gunicorn worker errors                                 |
-| `ips.log`              | timestamped history of every accepted IP change        |
-| `/var/log/nginx/ddns-*`| nginx access/error when using `setup_nginx.sh`         |
-
-```bash
-tail -f ddns_operations.log
-tail -f /var/log/nginx/ddns-access.log
-sudo journalctl -u ddns-server -f
-```
+| File | Content |
+|---|---|
+| `ddns_operations.log` | auth failures, IP changes, API errors |
+| `access.log` | gunicorn access log (query string stripped) |
+| `error.log` | gunicorn errors |
+| `ips.log` | timestamped history of IP changes |
+| `/var/log/nginx/ddns-*` | nginx access/error logs |
 
 ## Troubleshooting
 
-- **`403 Unauthorized`** — `DDNS_USERNAME` / `DDNS_PASSWORD` mismatch. Check `.env` and the router.
-- **`Invalid IP`** — router sent a private/reserved address. The service only accepts routable public IPv4.
-- **`429 Too many requests`** — rate limit hit (nginx 10/min or Flask 10/min). Wait or raise the limit in `setup_nginx.sh` / `ddns_server.py`.
-- **Cert issuance fails in `setup_nginx.sh`** — check the DigitalOcean token has write scope; the DNS-01 challenge needs to create a temporary TXT record.
-- **Router reports success but the record does not change** — check `ddns_operations.log`; the upstream DigitalOcean API response is logged with the error code.
-- **Systemd unit fails with `EnvironmentFile` error** — the unit file reads `.env` directly; make sure the path in the unit matches your install location.
+| Symptom | Likely cause |
+|---|---|
+| `403 Unauthorized` | `DDNS_USERNAME` / `DDNS_PASSWORD` mismatch between `.env` and router |
+| `Invalid IP` | Router sent a private address — only public IPv4 is accepted |
+| `429 Too many requests` | Rate limit hit; wait or raise the limit in `ddns_server.py` |
+| Cert issuance fails | API token missing write scope (DNS-01 needs to create a TXT record) |
+| Record doesn't update | Check `ddns_operations.log` for the provider API response code |
 
 ## Project layout
 
 ```
 ddns_tplink/
-├── install.sh                  # interactive .env setup
-├── setup_nginx.sh              # nginx + Let's Encrypt DNS-01 setup
-├── ddns_server.py              # Flask app (auth, validation, rate limit, DO API call)
-├── config.py                   # environment-based config object
-├── gunicorn.conf.py            # production server config (logs strip query string)
-├── ddns-server.service         # systemd unit
-├── start_production.sh         # start gunicorn detached
-├── stop_server.sh              # stop via PID file
-├── status_server.sh            # status via PID file
-├── test_server.py              # manual test helper
+├── setup.sh                    # unified interactive setup (run this first)
+├── start_production.sh         # manual start without systemd
+├── ddns_server.py              # Flask app
+├── gunicorn.conf.py            # production server config
+├── ddns-server.service.example # reference systemd unit (setup.sh writes the real one)
 ├── requirements.txt
 ├── SECURITY.md
-├── README.md
-└── logs: ddns_operations.log, access.log, error.log, ips.log
+└── README.md
 ```

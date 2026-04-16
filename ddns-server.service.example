@@ -3,12 +3,12 @@ Description=DDNS TP-Link Server
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=username
 Group=username
 WorkingDirectory=/home/username/ddns_tplink
 Environment=PATH=/home/username/ddns_tplink/.venv/bin
-ExecStart=/home/username/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py --daemon ddns_server:username
+ExecStart=/home/username/ddns_tplink/.venv/bin/gunicorn --config gunicorn.conf.py ddns_server:app
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=5

@@ -1,57 +1,44 @@
 #!/bin/bash
 
-# Production startup script
-# This script starts the DDNS server using Gunicorn
+# Manual production startup (alternative to systemd)
+# Run ./setup.sh first to create the virtual environment.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${GREEN}=== Starting DDNS server in production mode ===${NC}"
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo -e "${RED}Error: Virtual environment not found!${NC}"
-    echo "Run: python -m venv .venv"
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+    echo -e "${RED}Error: virtual environment not found.${NC}"
+    echo "Run ./setup.sh first to set up the server."
     exit 1
 fi
 
-# Activate virtual environment
-source .venv/bin/activate
+source "$SCRIPT_DIR/.venv/bin/activate"
 
-# Check if dependencies are installed
-if ! python -c "import flask, requests, gunicorn" 2>/dev/null; then
-    echo -e "${YELLOW}Installing dependencies...${NC}"
-    pip install -r requirements.txt
+if ! python3 -c "import flask, requests, gunicorn" 2>/dev/null; then
+    echo -e "${YELLOW}Installing missing dependencies...${NC}"
+    pip install -r "$SCRIPT_DIR/requirements.txt"
 fi
 
-# Stop server if running
-echo -e "${YELLOW}Stopping previous server (if exists)...${NC}"
+echo -e "${YELLOW}Stopping previous server (if running)...${NC}"
 pkill -f "gunicorn.*ddns_server" 2>/dev/null || true
 
-# Start server with Gunicorn
 echo -e "${GREEN}Starting server with Gunicorn...${NC}"
 gunicorn --config gunicorn.conf.py ddns_server:app &
 
-# Wait a moment for server to initialize
 sleep 2
 
-# Check if PID was created and display information
-if [ -f "ddns_server.pid" ]; then
-    PID=$(cat ddns_server.pid)
-    echo -e "${GREEN}Server started successfully!${NC}"
-    echo -e "Process PID: ${YELLOW}$PID${NC}"
-    echo -e "PID file: ${YELLOW}ddns_server.pid${NC}"
+if [ -f "$SCRIPT_DIR/ddns_server.pid" ]; then
+    PID=$(cat "$SCRIPT_DIR/ddns_server.pid")
+    echo -e "${GREEN}Server started (PID: ${YELLOW}${PID}${GREEN}).${NC}"
+    echo -e "Logs: ${YELLOW}access.log${NC} / ${YELLOW}error.log${NC}"
 else
-    echo -e "${RED}Error: PID file was not created${NC}"
+    echo -e "${RED}Error: PID file not created. Check error.log for details.${NC}"
     exit 1
 fi
-
-echo -e "${GREEN}Server started!${NC}"
-echo -e "Access logs: ${YELLOW}access.log${NC}"
-echo -e "Error logs: ${YELLOW}error.log${NC}"
