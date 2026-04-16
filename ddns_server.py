@@ -32,6 +32,10 @@ TRUST_PROXY  = os.getenv("TRUST_PROXY", "False").lower() == "true"
 PROVIDER = os.getenv("PROVIDER", "duckdns").lower()
 
 # Single-provider credentials (used when PROVIDER != "multi")
+# ALLOWED_HOSTNAME restricts which hostname is accepted in single-provider mode.
+# Derived automatically from provider config if not set explicitly.
+ALLOWED_HOSTNAME = os.getenv("ALLOWED_HOSTNAME")
+
 DUCK_TOKEN   = os.getenv("DUCK_TOKEN")
 DUCK_DOMAIN  = os.getenv("DUCK_DOMAIN")
 DO_TOKEN     = os.getenv("TOKEN") or os.getenv("DO_TOKEN")
@@ -97,6 +101,12 @@ else:
 _missing = [k for k, v in _required.items() if not v]
 if _missing:
     raise RuntimeError(f"Missing required configuration: {', '.join(_missing)}")
+
+# Derive ALLOWED_HOSTNAME for single-provider mode if not set explicitly.
+if PROVIDER != "multi" and not ALLOWED_HOSTNAME:
+    if PROVIDER == "duckdns":
+        ALLOWED_HOSTNAME = f"{DUCK_DOMAIN}.duckdns.org"
+    # For digitalocean/cloudflare, must be set via ALLOWED_HOSTNAME env var.
 
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024
 
@@ -313,6 +323,12 @@ def ddns_update():
         success, status, message = _dispatch(ip, endpoint)
         provider_label = endpoint.get("provider", "?")
     else:
+        if ALLOWED_HOSTNAME and hostname != ALLOWED_HOSTNAME:
+            logger.warning(
+                f"Rejected hostname '{sanitize_for_log(hostname)}' from {remote} "
+                f"(expected '{ALLOWED_HOSTNAME}')"
+            )
+            return "Unknown hostname", 400
         cache_key = "default"
         last_ip = get_last_ip(cache_key)
         if ip == last_ip:

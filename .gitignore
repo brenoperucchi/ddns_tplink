@@ -134,3 +134,4 @@ access.log
 error.log
 ddns_operations.log
 ddns_server.pid
+data/endpoints.json

@@ -63,14 +63,17 @@ The script first asks which DNS provider you want to use, then collects:
 **All providers:**
 - **DDNS username / password** — credentials the router will send; password is auto-generated
 - **Internal port** — gunicorn binds here on `127.0.0.1` (default `9876`)
+- **Second WAN (optional)** — if your router has two internet connections, the script asks if you want to add a second WAN. When selected, it creates `endpoints.json` and sets `PROVIDER=multi`, routing each hostname to its own DNS provider independently. This prevents one WAN's update from overwriting the other's DNS record.
 
 The resulting `.env` is written with `chmod 600`.
+
+> **`ALLOWED_HOSTNAME`** — in single-provider mode the server rejects any update whose `hostname` parameter doesn't match this value. The setup script sets it automatically. If you reconfigure manually, keep it in sync with the hostname your router sends.
 
 ### nginx + TLS (optional but recommended)
 
 Credentials travel in the URL, so HTTPS is required end-to-end. The script:
 
-- Installs `nginx`, `certbot`, and the DigitalOcean DNS plugin
+- Installs `nginx`, `certbot`, and the appropriate DNS plugin for your provider
 - Obtains a Let's Encrypt certificate via **DNS-01** (no port 80 needed)
 - Writes a hardened nginx vhost on a **custom port** (default `8443`) — safe if 80/443 are already used
 - Opens the port in `ufw` or `firewalld` if active
@@ -137,10 +140,11 @@ sudo journalctl -u ddns-server -f   # if using systemd
 | Response | Code | Meaning |
 |---|---|---|
 | `IP unchanged` | 200 | IP already matches the last recorded value |
-| `DNS updated` | 200 | A record updated (DigitalOcean or Cloudflare) |
+| `DNS updated` | 200 | A record updated successfully |
 | `Unauthorized` | 403 | wrong credentials |
 | `Missing parameters` | 400 | hostname or IP absent |
 | `Invalid hostname` | 400 | hostname failed RFC 1123 validation |
+| `Unknown hostname` | 400 | hostname not in `endpoints.json` (multi mode) or doesn't match `ALLOWED_HOSTNAME` (single mode) |
 | `Invalid IP` | 400 | private / reserved / non-public IPv4 |
 | `Too many requests` | 429 | rate limit: 10 req/min per IP |
 | `Failed to update DNS` | 502 | DNS provider API returned an error |
